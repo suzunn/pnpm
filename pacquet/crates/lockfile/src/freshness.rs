@@ -99,6 +99,19 @@ pub enum StalenessReason {
         "`overrides` in the lockfile ({lockfile:?}) doesn't match the current config ({config:?})"
     )]
     OverridesChanged { lockfile: BTreeMap<String, String>, config: BTreeMap<String, String> },
+
+    /// The lockfile's `settings.injectWorkspacePackages` differs from
+    /// the current install's `Config::inject_workspace_packages`.
+    /// Mirrors upstream's
+    /// [`getOutdatedLockfileSetting.ts:80-82`](https://github.com/pnpm/pnpm/blob/39101f5e37/lockfile/settings-checker/src/getOutdatedLockfileSetting.ts#L80-L82):
+    /// the gate normalizes both sides through `Boolean(...)` so an
+    /// absent setting equals an explicit `false`. Pacquet has no
+    /// resolver, so the matching action is to surface this as
+    /// `OutdatedLockfile`.
+    #[display(
+        "`injectWorkspacePackages` in the lockfile ({lockfile}) doesn't match the current config ({config})"
+    )]
+    InjectWorkspacePackagesChanged { lockfile: bool, config: bool },
 }
 
 /// Per-bucket diff against the manifest's flat union of deps.
@@ -193,6 +206,7 @@ pub fn check_lockfile_settings(
     lockfile: &Lockfile,
     overrides: Option<&HashMap<String, String>>,
     ignored_optional_dependencies: Option<&[String]>,
+    inject_workspace_packages: bool,
 ) -> Result<(), StalenessReason> {
     // Upstream checks `overrides` before `ignoredOptionalDependencies`,
     // so an install that changed both surfaces the overrides drift
@@ -228,6 +242,22 @@ pub fn check_lockfile_settings(
         return Err(StalenessReason::IgnoredOptionalDependenciesChanged {
             lockfile: lockfile_set,
             config: config_set,
+        });
+    }
+
+    // `Boolean(lockfile.settings?.injectWorkspacePackages) !==
+    // Boolean(injectWorkspacePackages)` at upstream's
+    // [`getOutdatedLockfileSetting.ts:80-82`](https://github.com/pnpm/pnpm/blob/39101f5e37/lockfile/settings-checker/src/getOutdatedLockfileSetting.ts#L80-L82).
+    // Pacquet's wire format omits the key when `false` (see
+    // [`LockfileSettings`]'s `skip_serializing_if`), so an absent
+    // settings block or a missing key both deserialize as `false`
+    // here and the `Boolean(...)` normalization is automatic.
+    let lockfile_inject =
+        lockfile.settings.as_ref().is_some_and(|settings| settings.inject_workspace_packages);
+    if lockfile_inject != inject_workspace_packages {
+        return Err(StalenessReason::InjectWorkspacePackagesChanged {
+            lockfile: lockfile_inject,
+            config: inject_workspace_packages,
         });
     }
     Ok(())

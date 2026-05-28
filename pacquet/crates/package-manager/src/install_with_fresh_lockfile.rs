@@ -1042,6 +1042,7 @@ fn build_fresh_lockfile(
         // yet. Default to `false` — matches upstream's default and
         // round-trips cleanly through `@pnpm/lockfile.settings-checker`.
         exclude_links_from_lockfile: false,
+        inject_workspace_packages: config.inject_workspace_packages,
         overrides: config
             .overrides
             .as_ref()

@@ -61,6 +61,12 @@ pub struct GraphToLockfileOptions<'a> {
     /// `@pnpm/lockfile.settings-checker`'s `getOutdatedLockfileSetting`.
     pub auto_install_peers: bool,
     pub exclude_links_from_lockfile: bool,
+    /// `injectWorkspacePackages` recorded the same way. Mirrors
+    /// upstream's `lockfile.settings.injectWorkspacePackages`. `false`
+    /// is omitted on save via [`LockfileSettings`]'s serde
+    /// `skip_serializing_if`, matching
+    /// [`lockfileFormatConverters.ts:70-72`](https://github.com/pnpm/pnpm/blob/39101f5e37/lockfile/fs/src/lockfileFormatConverters.ts#L70-L72).
+    pub inject_workspace_packages: bool,
     /// `overrides` recorded into the lockfile so a later install can
     /// detect drift. Mirrors upstream's `lockfile.overrides` field.
     pub overrides: Option<HashMap<String, String>>,
@@ -90,6 +96,7 @@ pub fn dependencies_graph_to_lockfile(opts: GraphToLockfileOptions<'_>) -> Lockf
         graph,
         auto_install_peers,
         exclude_links_from_lockfile,
+        inject_workspace_packages,
         overrides,
         ignored_optional_dependencies,
     } = opts;
@@ -106,7 +113,11 @@ pub fn dependencies_graph_to_lockfile(opts: GraphToLockfileOptions<'_>) -> Lockf
     Lockfile {
         lockfile_version: LockfileVersion::<9>::try_from(ComVer::new(9, 0))
             .expect("lockfileVersion 9.0 is always compatible with MAJOR=9"),
-        settings: Some(LockfileSettings { auto_install_peers, exclude_links_from_lockfile }),
+        settings: Some(LockfileSettings {
+            auto_install_peers,
+            exclude_links_from_lockfile,
+            inject_workspace_packages,
+        }),
         overrides: overrides.filter(|map| !map.is_empty()),
         ignored_optional_dependencies: ignored_optional_dependencies
             .filter(|list| !list.is_empty()),
