@@ -288,3 +288,55 @@ fn dedupes_only_overlapping_direct_deps() {
 
     drop((root, mock_instance));
 }
+
+mod known_failures {
+    //! Upstream `dedupeDirectDeps` cases blocked on pacquet's install
+    //! pipeline ordering. Pacquet runs `SymlinkDirectDependencies`
+    //! *before* the hoist pass, so the dedupe map only contains the
+    //! root importer's *direct* deps — not the *publicly-hoisted*
+    //! transitive deps that pnpm sees because hoist runs first there.
+    //! Closing this gap is a separate refactor (running hoist before
+    //! the symlink phase, or threading the hoist result into the
+    //! dedupe pass) tracked here as a known failure.
+    //!
+    //! See the call-site note at
+    //! `pacquet/crates/package-manager/src/install_frozen_lockfile.rs:953`
+    //! ("Pacquet's pipeline order has `SymlinkDirectDependencies` running
+    //! *before* hoist").
+    use pacquet_testing_utils::{
+        allow_known_failure,
+        known_failure::{KnownFailure, KnownResult},
+    };
+
+    fn dedupe_against_hoisted_root_unsupported() -> KnownResult<()> {
+        Err(KnownFailure::new(
+            "Pacquet runs SymlinkDirectDependencies before the hoist pass, \
+             so the dedupe map only sees root's direct deps — not its \
+             publicly-hoisted transitives. Closing this requires running \
+             hoist before the per-importer symlink step (or threading \
+             the hoist result into the dedupe pass).",
+        ))
+    }
+
+    /// Upstream: [`installing/deps-installer/test/install/dedupeDirectDeps.ts:113`](https://github.com/pnpm/pnpm/blob/39101f5e37/installing/deps-installer/test/install/dedupeDirectDeps.ts#L113)
+    /// `'dedupe direct dependencies after public hoisting'`. A
+    /// transitive of the root that gets publicly hoisted into root's
+    /// `node_modules/` should dedupe a non-root importer's *direct*
+    /// dep with the same alias.
+    #[test]
+    fn dedupes_direct_dep_against_publicly_hoisted_root_dep() {
+        allow_known_failure!(dedupe_against_hoisted_root_unsupported());
+    }
+
+    /// Upstream: [`pnpm/test/install/hoist.ts:77`](https://github.com/pnpm/pnpm/blob/39101f5e37/pnpm/test/install/hoist.ts#L77)
+    /// `'shamefully-hoist: applied to all the workspace projects when
+    /// set to true in the root pnpm-workspace.yaml file (with
+    /// dedupe-direct-deps=true)'`. Same pipeline-order gap: with
+    /// `shamefullyHoist: true`, a non-root importer's direct dep that
+    /// also lands in root via shameful-hoist should be deduped from
+    /// the importer's `node_modules/`.
+    #[test]
+    fn dedupe_under_shamefully_hoist() {
+        allow_known_failure!(dedupe_against_hoisted_root_unsupported());
+    }
+}
