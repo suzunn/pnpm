@@ -501,7 +501,6 @@ fn returns_up_to_date_when_state_carries_unported_pnpm_settings() {
     // `current_settings` today. Each is an upstream pnpm setting
     // listed in pnpm/pnpm#12009.
     settings.dedupe_direct_deps = Some(false);
-    settings.dedupe_injected_deps = Some(true);
     settings.exclude_links_from_lockfile = Some(false);
     settings.inject_workspace_packages = Some(true);
     settings.package_extensions =

@@ -546,6 +546,7 @@ impl<'a, DependencyGroupList> InstallWithFreshLockfile<'a, DependencyGroupList> 
             String,
             BTreeMap<String, pacquet_resolving_deps_resolver::DepPath>,
         > = BTreeMap::new();
+        let mut importer_root_dirs: BTreeMap<String, std::path::PathBuf> = BTreeMap::new();
         let mut total_nodes = 0usize;
         for (importer_id, importer_manifest) in &importer_manifests {
             let project_dir = importer_manifest
@@ -553,6 +554,7 @@ impl<'a, DependencyGroupList> InstallWithFreshLockfile<'a, DependencyGroupList> 
                 .parent()
                 .expect("manifest path always has a parent dir")
                 .to_path_buf();
+            importer_root_dirs.insert(importer_id.clone(), project_dir.clone());
             let importer_opts = ResolveImporterOptions {
                 auto_install_peers: config.auto_install_peers,
                 auto_install_peers_from_highest_match: config.auto_install_peers_from_highest_match,
@@ -625,6 +627,15 @@ impl<'a, DependencyGroupList> InstallWithFreshLockfile<'a, DependencyGroupList> 
             nodes = total_nodes,
             "phase complete",
         );
+
+        if config.dedupe_injected_deps {
+            crate::dedupe_injected_deps::dedupe_injected_deps(
+                &mut merged_graph,
+                &mut direct_by_importer,
+                &importer_root_dirs,
+                lockfile_dir,
+            );
+        }
 
         // Drop the resolver (and its packument cache) before the
         // install pass. Dropping `resolver` releases the
