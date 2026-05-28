@@ -179,6 +179,24 @@ impl PackageManifest {
             .flat_map(|(name, version)| version.as_str().map(|value| (name.as_str(), value)))
     }
 
+    /// Names whose `dependenciesMeta[<name>].injected` field is `true`.
+    /// Mirrors pnpm's `dependenciesMeta[*].injected` lookup at
+    /// [`getWantedDependencies`](https://github.com/pnpm/pnpm/blob/39101f5e37/installing/deps-resolver/src/getWantedDependencies.ts).
+    pub fn injected_dependency_names(&self) -> std::collections::HashSet<String> {
+        self.value
+            .get("dependenciesMeta")
+            .and_then(Value::as_object)
+            .map(|map| {
+                map.iter()
+                    .filter(|(_, meta)| {
+                        meta.get("injected").and_then(Value::as_bool).unwrap_or(false)
+                    })
+                    .map(|(name, _)| name.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Resolve a `(key, bare_specifier)` pair from a `package.json`
     /// dependency entry into the `(registry_name, version_range)` to send
     /// to the registry.

@@ -162,7 +162,8 @@ where
     // direct dep with the right `wanted.optional` flag for the
     // `ResolvedPackage.optional` propagation.
     let optional_names = importer_optional_dependency_names(manifest);
-    let mut initial_wanted: Vec<(String, String, bool)> = Vec::new();
+    let injected_names = manifest.injected_dependency_names();
+    let mut initial_wanted: Vec<crate::WantedTriple> = Vec::new();
     for (name, range) in manifest.dependencies(groups) {
         if !crate::is_valid_dependency_alias(name) {
             return Err(ResolveImporterError::Resolve(
@@ -173,7 +174,8 @@ where
             ));
         }
         let optional = optional_names.contains(name);
-        initial_wanted.push((name.to_string(), range.to_string(), optional));
+        let injected = injected_names.contains(name);
+        initial_wanted.push((name.to_string(), range.to_string(), optional, injected));
     }
     let initial_wanted = resolve_catalog_specifiers(initial_wanted, &catalogs)?;
     let mut direct = extend_tree(&ctx, resolver, initial_wanted).await?;
@@ -236,8 +238,8 @@ where
             // own `optional` flag to `true` would defeat the
             // auto-install. Mirrors upstream's `wantedDependency`
             // shape inside `hoistPeers`.
-            let new_wanted: Vec<(String, String, bool)> =
-                hoisted.into_iter().map(|(name, range)| (name, range, false)).collect();
+            let new_wanted: Vec<crate::WantedTriple> =
+                hoisted.into_iter().map(|(name, range)| (name, range, false, false)).collect();
             let new_direct = extend_tree(&ctx, resolver, new_wanted).await?;
             direct.extend(new_direct);
             update_preferred_versions_with_ctx(&ctx, &mut all_preferred_versions);
@@ -258,8 +260,8 @@ where
         // also installed at the importer level — the picker already
         // confirmed a preferred version is in scope. Treating them as
         // non-optional matches the required-peer arm above.
-        let new_wanted: Vec<(String, String, bool)> =
-            hoisted_optional.into_iter().map(|(name, range)| (name, range, false)).collect();
+        let new_wanted: Vec<crate::WantedTriple> =
+            hoisted_optional.into_iter().map(|(name, range)| (name, range, false, false)).collect();
         let new_direct = extend_tree(&ctx, resolver, new_wanted).await?;
         direct.extend(new_direct);
         update_preferred_versions_with_ctx(&ctx, &mut all_preferred_versions);

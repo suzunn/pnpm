@@ -157,7 +157,8 @@ where
 {
     let ctx = TreeCtx::new(opts.base_opts).with_patched_dependencies(opts.patched_dependencies);
     let optional_names = importer_optional_dependency_names(manifest);
-    let mut wanted: Vec<(String, String, bool)> = Vec::new();
+    let injected_names = manifest.injected_dependency_names();
+    let mut wanted: Vec<WantedTriple> = Vec::new();
     for (name, range) in manifest.dependencies(dependency_groups) {
         if !crate::is_valid_dependency_alias(name) {
             return Err(ResolveDependencyTreeError::InvalidDependencyName {
@@ -166,7 +167,8 @@ where
             });
         }
         let optional = optional_names.contains(name);
-        wanted.push((name.to_string(), range.to_string(), optional));
+        let injected = injected_names.contains(name);
+        wanted.push((name.to_string(), range.to_string(), optional, injected));
     }
     let direct = extend_tree(&ctx, resolver, wanted).await?;
     Ok(ctx.into_resolved_tree(direct))
@@ -187,11 +189,11 @@ pub(crate) fn importer_optional_dependency_names(manifest: &PackageManifest) -> 
 /// Cache key for [`TreeCtx::resolved_by_wanted`].
 ///
 /// The npm-shaped slice pacquet exposes today calls
-/// [`Resolver::resolve`] with only three [`WantedDependency`] fields
-/// populated — `alias`, `bare_specifier`, and `optional` (see the
-/// `WantedDependency` literals in [`extend_tree`] and the recursive
+/// [`Resolver::resolve`] with four [`WantedDependency`] fields
+/// populated — `alias`, `bare_specifier`, `optional`, and `injected` (see
+/// the `WantedDependency` literals in [`extend_tree`] and the recursive
 /// arm of [`fn@resolve_node`]). Anything else stays at `Default::default()`,
-/// so a tuple over those three fields uniquely identifies a wanted
+/// so a tuple over those four fields uniquely identifies a wanted
 /// dep across revisits.
 ///
 /// `optional` is part of the key because the npm resolver's
@@ -201,7 +203,19 @@ pub(crate) fn importer_optional_dependency_names(manifest: &PackageManifest) -> 
 /// caller satisfy itself with a non-optional caller's abbreviated
 /// result, losing the `libc`/`cpu`/`os` filter inputs that mode
 /// supplies.
-type WantedKey = (Option<String>, Option<String>, Option<bool>);
+///
+/// `injected` is part of the key because the workspace-pick branch of
+/// the npm resolver and the local resolver both fork on `injected` to
+/// pick between `link:` and `file:` resolutions — caching by the
+/// other three fields would conflate a workspace-package edge that
+/// asked for a `file:` copy with another that wanted a `link:` symlink.
+type WantedKey = (Option<String>, Option<String>, Option<bool>, Option<bool>);
+
+/// `(name, range, optional, injected)` quadruple consumed by
+/// [`extend_tree`] — the importer's per-direct-dep payload after the
+/// manifest reads have folded in `optionalDependencies` group
+/// membership and `dependenciesMeta[<name>].injected` flags.
+pub type WantedTriple = (String, String, bool, bool);
 
 /// One entry in [`TreeCtx::children_specs_by_id`] —
 /// `(child_alias, child_range, child_optional)` triples extracted from
@@ -371,18 +385,19 @@ impl TreeCtx {
 pub async fn extend_tree<Chain>(
     ctx: &TreeCtx,
     resolver: &Chain,
-    wanted: Vec<(String, String, bool)>,
+    wanted: Vec<WantedTriple>,
 ) -> Result<Vec<DirectDep>, ResolveDependencyTreeError>
 where
     Chain: Resolver + ?Sized,
 {
     let results = wanted
         .into_iter()
-        .map(|(name, range, optional)| async move {
+        .map(|(name, range, optional, injected)| async move {
             let wanted = WantedDependency {
                 alias: Some(name),
                 bare_specifier: Some(range),
                 optional: Some(optional),
+                injected: injected.then_some(true),
                 ..WantedDependency::default()
             };
             resolve_node(ctx, resolver, wanted, &[], 0, false).await
@@ -433,7 +448,7 @@ where
     // harmlessly (the entry holds an `Arc` to an equivalent
     // `ResolveResult`).
     let cache_key: WantedKey =
-        (wanted.alias.clone(), wanted.bare_specifier.clone(), wanted.optional);
+        (wanted.alias.clone(), wanted.bare_specifier.clone(), wanted.optional, wanted.injected);
     let cached = lock_recoverable(&ctx.resolved_by_wanted).get(&cache_key).map(Arc::clone);
     let result = match cached {
         Some(result) => result,
@@ -690,19 +705,19 @@ where
 /// A misconfigured entry surfaces immediately rather than masquerading
 /// as a `SPEC_NOT_SUPPORTED_BY_ANY_RESOLVER`.
 pub(crate) fn resolve_catalog_specifiers(
-    specs: Vec<(String, String, bool)>,
+    specs: Vec<WantedTriple>,
     catalogs: &Catalogs,
-) -> Result<Vec<(String, String, bool)>, ResolveDependencyTreeError> {
+) -> Result<Vec<WantedTriple>, ResolveDependencyTreeError> {
     specs
         .into_iter()
-        .map(|(name, range, optional)| {
+        .map(|(name, range, optional, injected)| {
             let wanted =
                 CatalogWantedDependency { alias: name.clone(), bare_specifier: range.clone() };
             match resolve_from_catalog(catalogs, &wanted) {
                 CatalogResolutionResult::Found(found) => {
-                    Ok((name, found.resolution.specifier, optional))
+                    Ok((name, found.resolution.specifier, optional, injected))
                 }
-                CatalogResolutionResult::Unused => Ok((name, range, optional)),
+                CatalogResolutionResult::Unused => Ok((name, range, optional, injected)),
                 CatalogResolutionResult::Misconfiguration(misconfig) => {
                     Err(ResolveDependencyTreeError::CatalogMisconfiguration(misconfig.error))
                 }
