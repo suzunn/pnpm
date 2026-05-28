@@ -167,9 +167,9 @@ pub fn check_optimistic_repeat_install(
 ///
 /// Only the fields pacquet actively populates via [`current_settings`]
 /// participate in the comparison. Fields the upstream pnpm CLI writes
-/// but pacquet hasn't ported yet (e.g. `peersSuffixMaxLength`,
-/// `dedupeDirectDeps`) are ignored — pacquet doesn't consume them
-/// during install, so a difference can't affect the materialised
+/// but pacquet hasn't ported yet (e.g. `dedupeDirectDeps`,
+/// `excludeLinksFromLockfile`) are ignored — pacquet doesn't consume
+/// them during install, so a difference can't affect the materialised
 /// `node_modules`. Without this carve-out a cross-package-manager
 /// scenario (pnpm wrote the state, pacquet reads it next) would
 /// always reject the fast path because pnpm's defaults fill those
@@ -207,6 +207,7 @@ fn settings_match(
         && recorded.optional == live.optional
         && recorded.overrides == live.overrides
         && recorded.patched_dependencies == live.patched_dependencies
+        && recorded.peers_suffix_max_length == live.peers_suffix_max_length
         && recorded.production == live.production
         && recorded.public_hoist_pattern == live.public_hoist_pattern
     // Deliberately *not* compared (tracked at pnpm/pnpm#12009 — drop
@@ -222,7 +223,6 @@ fn settings_match(
     //                                round-trip through workspace state
     //                                yet — separate follow-up).
     //   packageExtensions
-    //   peersSuffixMaxLength
     //   preferWorkspacePackages
     //   trustPolicy*                (same situation as minimumReleaseAge)
     //   workspacePackagePatterns    (already covered via
@@ -273,6 +273,7 @@ pub(crate) fn current_settings(
             .as_ref()
             .map(|map| map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
         patched_dependencies: config.patched_dependencies.clone(),
+        peers_suffix_max_length: Some(config.peers_suffix_max_length as u32),
         production: Some(included.dependencies),
         public_hoist_pattern: config.public_hoist_pattern.clone(),
         ..Default::default()

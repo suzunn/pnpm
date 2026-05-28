@@ -581,6 +581,7 @@ impl<'a, DependencyGroupList> InstallWithFreshLockfile<'a, DependencyGroupList> 
                     ..ResolveOptions::default()
                 },
                 catalogs: catalogs.clone(),
+                peers_suffix_max_length: config.peers_suffix_max_length as usize,
             };
             let importer_result = resolve_importer(
                 &*resolver,
@@ -1041,6 +1042,9 @@ fn build_fresh_lockfile(
         // yet. Default to `false` — matches upstream's default and
         // round-trips cleanly through `@pnpm/lockfile.settings-checker`.
         exclude_links_from_lockfile: false,
+        peers_suffix_max_length: (config.peers_suffix_max_length
+            != pacquet_config::default_peers_suffix_max_length())
+        .then_some(config.peers_suffix_max_length),
         overrides: config
             .overrides
             .as_ref()

@@ -37,6 +37,7 @@ fn single_importer_opts<'a>(
         graph,
         auto_install_peers,
         exclude_links_from_lockfile,
+        peers_suffix_max_length: None,
         overrides,
         ignored_optional_dependencies,
     }
@@ -806,6 +807,7 @@ fn multi_importer_workspace_writes_per_project_lockfile_entries() {
         graph: &graph,
         auto_install_peers: false,
         exclude_links_from_lockfile: false,
+        peers_suffix_max_length: None,
         overrides: None,
         ignored_optional_dependencies: None,
     });
@@ -926,6 +928,7 @@ fn multi_importer_pruner_marks_shared_dep_non_optional_when_any_importer_reaches
         graph: &graph,
         auto_install_peers: false,
         exclude_links_from_lockfile: false,
+        peers_suffix_max_length: None,
         overrides: None,
         ignored_optional_dependencies: None,
     });
@@ -1075,6 +1078,7 @@ fn workspace_sibling_link_renders_per_importer_with_link_ref() {
         graph: &graph,
         auto_install_peers: false,
         exclude_links_from_lockfile: false,
+        peers_suffix_max_length: None,
         overrides: None,
         ignored_optional_dependencies: None,
     });

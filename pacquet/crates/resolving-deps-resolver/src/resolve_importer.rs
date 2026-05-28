@@ -91,6 +91,12 @@ pub struct ResolveImporterOptions {
     /// are not resolved through the catalog, matching upstream's
     /// [importer-only catalog scope](https://github.com/pnpm/pnpm/blob/a8a8cbce6d/installing/deps-resolver/src/resolveDependencies.ts#L592-L600).
     pub catalogs: Catalogs,
+
+    /// Cap on the rendered peer-suffix before the suffix is replaced
+    /// with a short hash. Threaded into [`fn@resolve_peers`] via
+    /// [`ResolvePeersOptions`]. Mirrors upstream's
+    /// `peersSuffixMaxLength` (default 1000).
+    pub peers_suffix_max_length: usize,
 }
 
 /// Result of [`fn@resolve_importer`] — the fully-walked tree plus the
@@ -134,7 +140,9 @@ where
         patched_dependencies,
         base_opts,
         catalogs,
+        peers_suffix_max_length,
     } = opts;
+    let resolve_peers_opts = ResolvePeersOptions { peers_suffix_max_length };
 
     let ctx = TreeCtx::new(base_opts).with_patched_dependencies(patched_dependencies);
 
@@ -179,7 +187,7 @@ where
     loop {
         loop {
             let mut snapshot = ctx.snapshot(direct.clone());
-            let peers_result = resolve_peers(&mut snapshot, ResolvePeersOptions::default());
+            let peers_result = resolve_peers(&mut snapshot, resolve_peers_opts);
 
             let (missing_required, fresh_optional) = partition_missing_peers(
                 &peers_result.peer_dependency_issues.missing,
@@ -260,7 +268,7 @@ where
     }
 
     let mut resolved_tree = ctx.into_resolved_tree(direct);
-    let peers_result = resolve_peers(&mut resolved_tree, ResolvePeersOptions::default());
+    let peers_result = resolve_peers(&mut resolved_tree, resolve_peers_opts);
     Ok(ResolveImporterResult { resolved_tree, peers_result })
 }
 
