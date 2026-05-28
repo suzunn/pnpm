@@ -577,6 +577,7 @@ impl<'a, DependencyGroupList> InstallWithFreshLockfile<'a, DependencyGroupList> 
                     // workspace when the names collide.
                     always_try_workspace_packages: config.link_workspace_packages
                         != LinkWorkspacePackages::Off,
+                    inject_workspace_packages: config.inject_workspace_packages,
                     update_checksums,
                     ..ResolveOptions::default()
                 },
