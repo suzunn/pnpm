@@ -48,7 +48,6 @@ use crate::{
 };
 
 /// Options threaded into [`fn@resolve_importer`].
-#[derive(Debug)]
 pub struct ResolveImporterOptions {
     /// When true, missing required peers get installed at the importer
     /// even if no preferred version is in scope (the picker uses the
@@ -91,6 +90,29 @@ pub struct ResolveImporterOptions {
     /// are not resolved through the catalog, matching upstream's
     /// [importer-only catalog scope](https://github.com/pnpm/pnpm/blob/a8a8cbce6d/installing/deps-resolver/src/resolveDependencies.ts#L592-L600).
     pub catalogs: Catalogs,
+
+    /// `readPackageHook` applied to every resolved manifest before
+    /// downstream consumers see it. Today drives `packageExtensions`;
+    /// see [`crate::ManifestHook`].
+    pub manifest_hook: Option<crate::ManifestHook>,
+}
+
+impl std::fmt::Debug for ResolveImporterOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolveImporterOptions")
+            .field("auto_install_peers", &self.auto_install_peers)
+            .field(
+                "auto_install_peers_from_highest_match",
+                &self.auto_install_peers_from_highest_match,
+            )
+            .field("resolve_peers_from_workspace_root", &self.resolve_peers_from_workspace_root)
+            .field("all_preferred_versions", &self.all_preferred_versions)
+            .field("patched_dependencies", &self.patched_dependencies)
+            .field("base_opts", &self.base_opts)
+            .field("catalogs", &self.catalogs)
+            .field("manifest_hook", &self.manifest_hook.as_ref().map(|_| "<hook>"))
+            .finish()
+    }
 }
 
 /// Result of [`fn@resolve_importer`] — the fully-walked tree plus the
@@ -134,9 +156,12 @@ where
         patched_dependencies,
         base_opts,
         catalogs,
+        manifest_hook,
     } = opts;
 
-    let ctx = TreeCtx::new(base_opts).with_patched_dependencies(patched_dependencies);
+    let ctx = TreeCtx::new(base_opts)
+        .with_patched_dependencies(patched_dependencies)
+        .with_manifest_hook(manifest_hook);
 
     // Mirrors upstream's
     // [`getAllDependenciesFromManifest({ autoInstallPeers })`](https://github.com/pnpm/pnpm/blob/097983fbca/pkg-manifest/utils/src/getAllDependenciesFromManifest.ts):

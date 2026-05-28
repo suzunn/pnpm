@@ -5618,3 +5618,98 @@ async fn optimistic_repeat_install_round_trips_on_single_project_install() {
 
     drop((dir, mock_instance));
 }
+
+/// `packageExtensions` adds entries to a dependency's manifest at
+/// resolve time and the resulting lockfile records the merged shape.
+///
+/// Ports the spirit of
+/// [`packageExtensions.ts:16`](https://github.com/pnpm/pnpm/blob/39101f5e37/installing/deps-installer/test/install/packageExtensions.ts#L16)
+/// `manifests are extended with fields specified by packageExtensions`.
+/// Pacquet doesn't yet record `packageExtensionsChecksum` on the
+/// lockfile (separate slice in pnpm/pnpm#12009), so this test only
+/// asserts the resolution-side effect: an extension adding a
+/// `peerDependencies` entry must surface in the package's lockfile
+/// metadata.
+#[tokio::test]
+async fn fresh_install_applies_package_extensions_to_dependency_manifest() {
+    let mock_instance = AutoMockInstance::load_or_init();
+
+    let dir = tempdir().unwrap();
+    let store_dir = dir.path().join("pacquet-store");
+    let project_root = dir.path().join("project");
+    let modules_dir = project_root.join("node_modules");
+    let virtual_store_dir = modules_dir.join(".pacquet");
+
+    let manifest_path = dir.path().join("package.json");
+    let mut manifest = PackageManifest::create_if_needed(manifest_path.clone()).unwrap();
+    manifest
+        .add_dependency("@pnpm.e2e/hello-world-js-bin", "1.0.0", DependencyGroup::Prod)
+        .unwrap();
+    manifest.save().unwrap();
+
+    let mut config = Config::new();
+    config.store_dir = store_dir.into();
+    config.modules_dir = modules_dir.clone();
+    config.virtual_store_dir = virtual_store_dir;
+    config.registry = mock_instance.url();
+    // Add a `peerDependencies` entry to the resolved manifest of
+    // `@pnpm.e2e/hello-world-js-bin`, marked optional so the missing
+    // peer never escalates to a fetch error during this minimal test.
+    let mut peers = std::collections::BTreeMap::new();
+    peers.insert("synthetic-peer".to_string(), "*".to_string());
+    let mut peers_meta = std::collections::BTreeMap::new();
+    peers_meta.insert(
+        "synthetic-peer".to_string(),
+        pacquet_config::PeerDependencyMeta { optional: Some(true) },
+    );
+    let mut extensions = indexmap::IndexMap::new();
+    extensions.insert(
+        "@pnpm.e2e/hello-world-js-bin".to_string(),
+        pacquet_config::PackageExtension {
+            peer_dependencies: Some(peers),
+            peer_dependencies_meta: Some(peers_meta),
+            ..Default::default()
+        },
+    );
+    config.package_extensions = Some(extensions);
+    let config = config.leak();
+
+    Install {
+        tarball_mem_cache: Default::default(),
+        http_client: &Default::default(),
+        http_client_arc: std::sync::Arc::new(Default::default()),
+        config,
+        manifest: &manifest,
+        lockfile: None,
+        lockfile_path: None,
+        dependency_groups: [DependencyGroup::Prod],
+        frozen_lockfile: false,
+        prefer_frozen_lockfile: None,
+        ignore_manifest_check: false,
+        skip_runtimes: false,
+        trust_lockfile: false,
+        update_checksums: false,
+        supported_architectures: None,
+        node_linker: pacquet_config::NodeLinker::default(),
+        resolved_packages: &Default::default(),
+    }
+    .run::<SilentReporter>()
+    .await
+    .expect("install should succeed");
+
+    let lockfile_path = dir.path().join(Lockfile::FILE_NAME);
+    let content = std::fs::read_to_string(&lockfile_path).expect("read lockfile");
+    let lockfile: Lockfile = serde_saphyr::from_str(&content).expect("parse fresh lockfile");
+
+    let packages = lockfile.packages.as_ref().expect("packages map populated");
+    let pkg_key: pacquet_lockfile::PackageKey =
+        "@pnpm.e2e/hello-world-js-bin@1.0.0".parse().unwrap();
+    let metadata = packages.get(&pkg_key).expect("packages entry recorded");
+    let peers = metadata
+        .peer_dependencies
+        .as_ref()
+        .expect("packageExtensions added peerDependencies must be recorded");
+    assert_eq!(peers.get("synthetic-peer").map(String::as_str), Some("*"));
+
+    drop((dir, mock_instance));
+}

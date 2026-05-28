@@ -529,6 +529,17 @@ impl<'a, DependencyGroupList> InstallWithFreshLockfile<'a, DependencyGroupList> 
             .map_err(InstallWithFreshLockfileError::ResolvePatchedDependencies)?
             .map(Arc::new);
 
+        // Build the `packageExtensions` hook once per install. The
+        // closure captures an `Arc<PackageExtender>` so every importer
+        // and every concurrent resolve clones the same grouped-by-name
+        // lookup table. `None` when no extensions are configured so the
+        // resolver hot path skips the per-resolve dispatch.
+        let package_extensions_hook = config
+            .package_extensions
+            .as_ref()
+            .map(crate::PackageExtender::new)
+            .and_then(crate::PackageExtender::into_manifest_hook);
+
         // Loop per workspace project. Each importer gets its own
         // resolve_importer call with its own `project_dir` so
         // `workspace:` / `link:` resolutions compute paths relative
@@ -581,6 +592,7 @@ impl<'a, DependencyGroupList> InstallWithFreshLockfile<'a, DependencyGroupList> 
                     ..ResolveOptions::default()
                 },
                 catalogs: catalogs.clone(),
+                manifest_hook: package_extensions_hook.clone(),
             };
             let importer_result = resolve_importer(
                 &*resolver,

@@ -206,6 +206,10 @@ fn settings_match(
         && recorded.node_linker == live.node_linker
         && recorded.optional == live.optional
         && recorded.overrides == live.overrides
+        && package_extensions_match(
+            recorded.package_extensions.as_ref(),
+            live.package_extensions.as_ref(),
+        )
         && recorded.patched_dependencies == live.patched_dependencies
         && recorded.production == live.production
         && recorded.public_hoist_pattern == live.public_hoist_pattern
@@ -221,7 +225,6 @@ fn settings_match(
     //   minimumReleaseAge*          (pacquet supports it but doesn't
     //                                round-trip through workspace state
     //                                yet — separate follow-up).
-    //   packageExtensions
     //   peersSuffixMaxLength
     //   preferWorkspacePackages
     //   trustPolicy*                (same situation as minimumReleaseAge)
@@ -240,6 +243,30 @@ fn allow_builds_match(
         (None, None) => true,
         (Some(map), None) | (None, Some(map)) => map.is_empty(),
         (Some(state_map), Some(current_map)) => state_map == current_map,
+    }
+}
+
+/// `packageExtensions` are compared as opaque `serde_json::Value`
+/// trees so the workspace-state file written by either implementation
+/// round-trips through the other. Empty maps are equivalent to absent
+/// — pacquet's [`WorkspaceSettings::apply_to`] already collapses
+/// `packageExtensions: {}` to `None`, but pnpm may write `Some({})`
+/// directly, and the workspace-state file is shared across the two.
+fn package_extensions_match(
+    state_value: Option<&serde_json::Value>,
+    current_value: Option<&serde_json::Value>,
+) -> bool {
+    fn is_empty(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(map) => map.is_empty(),
+            serde_json::Value::Null => true,
+            _ => false,
+        }
+    }
+    match (state_value, current_value) {
+        (None, None) => true,
+        (Some(value), None) | (None, Some(value)) => is_empty(value),
+        (Some(state_value), Some(current_value)) => state_value == current_value,
     }
 }
 
@@ -272,6 +299,10 @@ pub(crate) fn current_settings(
             .overrides
             .as_ref()
             .map(|map| map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+        package_extensions: config
+            .package_extensions
+            .as_ref()
+            .and_then(|map| serde_json::to_value(map).ok()),
         patched_dependencies: config.patched_dependencies.clone(),
         production: Some(included.dependencies),
         public_hoist_pattern: config.public_hoist_pattern.clone(),
